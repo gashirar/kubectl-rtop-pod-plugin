@@ -1,0 +1,169 @@
+#!/bin/bash
+
+function usage_exit() {
+    echo "Display Resource (CPU/Memory) usage of pods."
+    echo ""
+    echo "Options:"
+    echo "  -A, --all-namespaces=false: If present, list the requested object(s) across all namespaces. Namespace in currentcontext is ignored even if specified with --namespace."
+    echo "  -n, --namespace string    : If present, the namespace scope for this CLI request."
+    exit 1
+}
+
+function get_podmetricslist() {
+    echo $(kubectl get --raw "/apis/metrics.k8s.io/v1beta1/pods" | jq -c '.')
+}
+
+function flatten_podmetricslist() {
+    echo $1 | jq -c '.items[] | .containers as $c | del(.containers) | (. + {"container": $c[]})'
+}
+
+function get_podlist() {
+    echo $(kubectl get pod -o json ${@} | jq -c '.')
+}
+
+function extract_pod_resources(){
+    echo $1 | jq -c '.items[] | .spec.containers as $c | del(.containers) | (. + {"container": $c[]})' | \
+              jq -c '. | .container as $c |{name: .metadata.name, namespace: .metadata.namespace, container: {name: $c.name, resources: $c.resources}}'
+}
+
+function extract_pod_metrics(){
+    echo $1 | jq -c '.items[] | .containers as $c | del(.containers) | (. + {"container": $c[]})' | \
+              jq -c '. | .container as $c |{name: .metadata.name, namespace: .metadata.namespace, container: {name: $c.name, usage: $c.usage}}'
+}
+
+
+function memory_converter() {
+    memory=0
+    if   [[ $1 == *G* ]]; then
+        memory=$(echo ${1} | sed -e 's/Gi*//g')
+        memory=$((memory * 1024 * 1024))
+    elif [[ $1 == *M* ]]; then
+        memory=$(echo ${1} | sed -e 's/Mi*//g')
+        memory=$((memory * 1024))
+    else
+        memory=$(echo ${1} | sed -e 's/Ki*//g')
+    fi
+    
+    if [[ $2 == *Gi* ]]; then
+        memory=$((memory / 1024 / 1024))
+    elif [[ $2 == *Mi* ]]; then
+        memory=$((memory / 1024))
+    fi
+
+    echo $memory
+}
+
+function cpu_converter() {
+    cpu=""
+    if   [[ $1 == *m* ]]; then
+        cpu=$(echo ${1} | sed -e 's/m*//g')
+    else
+        cpu=$(($1 * 1000))
+    fi
+}
+
+PROGNAME=$(basename $0)
+VERSION="1.0"
+
+usage() {
+    echo "Display Resource (CPU/Memory) usage of pods."
+    echo 
+    echo "Options:"
+    echo "  -A, --all-namespaces=false: If present, list the requested object(s) across all namespaces. Namespace in currentcontext is ignored even if specified with --namespace."
+    echo "  -n, --namespace string    : If present, the namespace scope for this CLI request."
+    echo
+    exit 1
+}
+
+ARG_NAMESPACE=""
+for OPT in "$@"
+do
+    case $OPT in
+        -h | --help)
+            usage
+            exit 1
+            ;;
+        --version)
+            echo $VERSION
+            exit 1
+            ;;
+        -n | --namespace)
+            if [[ -z "$2" ]] || [[ "$2" =~ ^-+ ]]; then
+                echo "$PROGNAME: option requires an argument -- $1" 1>&2
+                exit 1
+            fi
+            ARG_NAMESPACE=" -n ${2}"
+            shift 2
+            ;;
+        -A | --all-namespaces)
+            ARG_NAMESPACE="--all-namespaces"
+            shift 1
+            ;;
+        -p | --percentile)
+            ARG_PERCENTILE=true
+            shift 1
+            ;;
+        -*)
+            echo "$PROGNAME: illegal option -- '$(echo $1 | sed 's/^-*//')'" 1>&2
+            exit 1
+            ;;
+        *)
+            if [[ ! -z "$1" ]] && [[ ! "$1" =~ ^-+ ]]; then
+                #param=( ${param[@]} "$1" )
+                param+=( "$1" )
+                shift 1
+            fi
+            ;;
+    esac
+done
+
+# Container Metrics List
+cml=( $(extract_pod_metrics "$(get_podmetricslist)") )
+
+# Container Resource List
+crl=( $(extract_pod_resources "$(get_podlist ${ARG_NAMESPACE})") )
+
+declare -A cml_hash
+for (( i = 0; i < ${#cml[@]}; ++i )); do
+    namespace=$(echo ${cml[${i}]} | jq -r '.namespace')
+    pod=$(echo ${cml[${i}]} | jq -r '.name')
+    container=$(echo ${cml[${i}]} | jq -r '.container.name')
+    cml_hash["${namespace}_${pod}_${container}"]=${cml[${i}]}
+done
+
+merge=""
+for (( i = 0; i < ${#crl[@]}; ++i )); do
+    container_info=$(echo ${crl[${i}]} | jq -r '{"pod": .name, "namespace": .namespace, "container": .container.name, "cpureq": .container.resources.requests.cpu, "cpulim": .container.resources.limits.cpu, "memreq": .container.resources.requests.memory, "memlim": .container.resources.limits.memory}')
+    pod=$(echo ${container_info} | jq -r '.pod')
+    container=$(echo ${container_info} | jq -r '.container')
+    namespace=$(echo ${container_info} | jq -r '.namespace')
+    cpureq=$(echo ${container_info} | jq -r '.cpureq')
+    cpulim=$(echo ${container_info} | jq -r '.cpulim')
+    memreq=$(echo ${container_info} | jq -r '.memreq')
+    memlim=$(echo ${container_info} | jq -r '.memlim')
+    cpuuse=$(echo ${cml_hash["${namespace}_${pod}_${container}"]} | jq -r '.container.usage.cpu')
+    memuse=$(echo ${cml_hash["${namespace}_${pod}_${container}"]} | jq -r '.container.usage.memory')
+
+    cpuuse=${cpuuse:--}
+    if [ $cpureq = "null" ]; then
+        cpureq="-"
+    fi
+    if [ $cpulim = "null" ]; then
+        cpulim="-"
+    fi
+    memuse=${memuse:--}
+    if [ $memreq = "null" ]; then
+        memreq="-"
+    fi
+    if [ $memlim = "null" ]; then
+        memlim="-"
+    fi
+    
+    if [ $cpuuse = "-" ]; then
+        continue
+    fi
+
+    merge+="${pod},${container},${cpuuse},${cpureq},${cpulim},$(memory_converter ${memuse} "Mi")Mi,${memreq},${memlim}\n"
+done
+merge="NAME,Container,CPU Usage,Request,Limit,Memory Usage,Request,Limit\n"${merge}
+echo -e ${merge} | column -s, -t
