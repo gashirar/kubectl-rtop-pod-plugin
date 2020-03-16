@@ -12,17 +12,33 @@ This plugin uses
 `kubectl top pod` doesn't output resource requests and limits.
 
 ```
-POD                 NAME                CPU(cores)   MEMORY(bytes)   
-dns-default-jk24b   dns                 2m           15Mi            
-dns-default-jk24b   dns-node-resolver   0m           5Mi            
+NAMESPACE     POD                                NAME                      CPU(cores)   MEMORY(bytes)
+kube-system   coredns-5c98db65d4-fnb58           coredns                   4m           8Mi
+kube-system   coredns-5c98db65d4-trs2h           coredns                   3m           10Mi
+kube-system   etcd-minikube                      etcd                      24m          34Mi
+kube-system   kube-addon-manager-minikube        kube-addon-manager        11m          6Mi
+kube-system   kube-apiserver-minikube            kube-apiserver            36m          173Mi 
+kube-system   kube-controller-manager-minikube   kube-controller-manager   17m          38Mi
+kube-system   kube-proxy-9kdv2                   kube-proxy                2m           26Mi
+kube-system   kube-scheduler-minikube            kube-scheduler            1m           10Mi
+kube-system   metrics-server-84bb785897-llzrt    metrics-server            0m           9Mi
+kube-system   storage-provisioner                storage-provisioner       0m           36Mi
 ```
 
 So, added it.
 
 ```
-NAME               Container          CPU Usage  Request  Limit  Memory Usage  Request  Limit
-dns-default-jk24b  dns                2m         100m     -      15Mi          70Mi     512Mi
-dns-default-jk24b  dns-node-resolver  0          10m      -      5Mi           -        -
+NAMESPACE    POD                               NAME                     CPU Usage(cores)  Request  Limit  MEMORY Usage(bytes)  Request  Limit
+kube-system  coredns-5c98db65d4-fnb58          coredns                  4m                100m     -      8Mi                  70Mi     170Mi
+kube-system  coredns-5c98db65d4-trs2h          coredns                  3m                100m     -      10Mi                 70Mi     170Mi
+kube-system  etcd-minikube                     etcd                     24m               -        -      34Mi                 -        -
+kube-system  kube-addon-manager-minikube       kube-addon-manager       11m               5m       -      6Mi                  50Mi     -
+kube-system  kube-apiserver-minikube           kube-apiserver           36m               250m     -      173Mi                -        -
+kube-system  kube-controller-manager-minikube  kube-controller-manager  17m               200m     -      38Mi                 -        -
+kube-system  kube-proxy-9kdv2                  kube-proxy               2m                -        -      26Mi                 -        -
+kube-system  kube-scheduler-minikube           kube-scheduler           1m                100m     -      10Mi                 -        -
+kube-system  metrics-server-84bb785897-llzrt   metrics-server           0                 -        -      9Mi                  -        -
+kube-system  storage-provisioner               storage-provisioner      0                 -        -      36Mi                 -        -
 ```
 
 ## Cleanup
