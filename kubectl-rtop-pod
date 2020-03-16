@@ -163,7 +163,7 @@ for (( i = 0; i < ${#crl[@]}; ++i )); do
         continue
     fi
 
-    merge+="${pod},${container},${cpuuse},${cpureq},${cpulim},$(memory_converter ${memuse} "Mi")Mi,${memreq},${memlim}\n"
+    merge+="${namespace},${pod},${container},${cpuuse},${cpureq},${cpulim},$(memory_converter ${memuse} "Mi")Mi,${memreq},${memlim}\n"
 done
-merge="NAME,Container,CPU Usage,Request,Limit,Memory Usage,Request,Limit\n"${merge}
+merge="NAMESPACE,POD,NAME,CPU Usage(cores),Request,Limit,MEMORY Usage(bytes),Request,Limit\n"${merge}
 echo -e ${merge} | column -s, -t
